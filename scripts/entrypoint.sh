@@ -122,5 +122,14 @@ if [[ -z "${TELEGRAM_ALLOWED_USERS:-}${DISCORD_ALLOWED_USERS:-}${SLACK_ALLOWED_U
   fi
 fi
 
+# Migrate persisted config schema forward on version upgrades. Mirrors
+# upstream's docker boot migration (backs up config.yaml first). Non-fatal:
+# a failure must not block the gateway. Set HERMES_SKIP_CONFIG_MIGRATION=1 to skip.
+if [[ -f "$CONFIG_FILE" ]]; then
+  echo "[bootstrap] Migrating config schema (if needed)..."
+  /opt/venv/bin/python /opt/hermes-agent/scripts/docker_config_migrate.py \
+    || echo "[bootstrap] WARNING: config migration failed; continuing" >&2
+fi
+
 echo "[bootstrap] Starting Hermes gateway..."
 exec hermes gateway
