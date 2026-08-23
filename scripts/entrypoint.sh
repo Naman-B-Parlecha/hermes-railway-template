@@ -62,10 +62,21 @@ has_valid_provider_config() {
 append_if_set() {
   local key="$1"
   local val="${!key:-}"
-  if [[ -n "$val" ]]; then
+  # Additive: the volume .env is the source of truth for secrets we keep OFF
+  # the team-visible dashboard. Only append from process env when the key is
+  # not already in .env — never overwrite a hand-managed value.
+  if [[ -n "$val" ]] && ! grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
     printf '%s=%s\n' "$key" "$val" >> "$ENV_FILE"
   fi
 }
+
+# Load the on-volume .env FIRST so secrets we keep OFF the team-visible
+# dashboard (API keys, tokens) are visible to the provider/platform checks
+# below and to the gateway. .env wins over a dashboard var of the same name —
+# the volume .env is the source of truth for secrets.
+if [[ -f "$ENV_FILE" ]]; then
+  set -a; . "$ENV_FILE"; set +a
+fi
 
 if ! has_valid_provider_config; then
   echo "[bootstrap] ERROR: Configure a provider: OPENROUTER_API_KEY, or OPENAI_BASE_URL+OPENAI_API_KEY, or ANTHROPIC_API_KEY." >&2
@@ -74,12 +85,11 @@ fi
 
 validate_platforms
 
-echo "[bootstrap] Writing runtime env to ${ENV_FILE}"
-{
-  echo "# Managed by entrypoint.sh"
-  echo "HERMES_HOME=${HERMES_HOME}"
-  echo "MESSAGING_CWD=${MESSAGING_CWD}"
-} > "$ENV_FILE"
+echo "[bootstrap] Ensuring runtime env in ${ENV_FILE} (additive; never truncates)"
+touch "$ENV_FILE"
+grep -q '^# Managed by entrypoint.sh' "$ENV_FILE" || echo "# Managed by entrypoint.sh" >> "$ENV_FILE"
+grep -q '^HERMES_HOME=' "$ENV_FILE" || echo "HERMES_HOME=${HERMES_HOME}" >> "$ENV_FILE"
+grep -q '^MESSAGING_CWD=' "$ENV_FILE" || echo "MESSAGING_CWD=${MESSAGING_CWD}" >> "$ENV_FILE"
 
 for key in \
   OPENROUTER_API_KEY OPENAI_API_KEY OPENAI_BASE_URL ANTHROPIC_API_KEY LLM_MODEL HERMES_INFERENCE_PROVIDER HERMES_PORTAL_BASE_URL NOUS_INFERENCE_BASE_URL HERMES_NOUS_MIN_KEY_TTL_SECONDS HERMES_DUMP_REQUESTS \
